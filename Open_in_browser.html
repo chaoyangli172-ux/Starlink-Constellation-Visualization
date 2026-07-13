@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Starlink Constellastion· Real Ephemeris</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000408; overflow:hidden; font-family:'Courier New',monospace; color:#7ab8d4; }
+#cc { position:fixed; inset:0; cursor:grab; }
+#cc:active { cursor:grabbing; }
+canvas { display:block; }
+
+/* ── File Loading Overlay Layer ── */
+#overlay {
+  position:fixed; inset:0; z-index:100;
+  background:rgba(0,4,8,.93);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:20px;
+}
+#dropzone {
+  width:420px; max-width:90vw;
+  border:1px solid rgba(0,180,255,.4);
+  padding:40px 30px; text-align:center;
+  cursor:pointer; transition:all .2s;
+  background:rgba(0,20,35,.6);
+}
+#dropzone:hover,#dropzone.drag{border-color:#00d4ff;background:rgba(0,40,60,.8);}
+#dropzone .icon{font-size:2.5rem;margin-bottom:14px;opacity:.7;}
+#dropzone .hint{font-size:.75rem;color:#4a8090;margin-top:8px;letter-spacing:.08em;}
+#dztitle{font-size:.9rem;color:#00d4ff;letter-spacing:.15em;text-transform:uppercase;}
+#fileInput{display:none;}
+#progress{font-size:.7rem;color:#4a8090;letter-spacing:.1em;display:none;}
+#errmsg{font-size:.7rem;color:#ff6655;display:none;}
+
+/* ── Left Terminal Panel ── */
+#tp {
+  position:fixed; left:0; top:0; bottom:0; width:216px;
+  background:rgba(0,6,14,.92);
+  border-right:1px solid rgba(0,180,255,.12);
+  z-index:10; display:flex; flex-direction:column;
+  padding:16px 13px; gap:10px; pointer-events:all;
+  overflow-y:auto; overflow-x:hidden;
+}
+#tp::-webkit-scrollbar{width:3px;}
+#tp::-webkit-scrollbar-thumb{background:rgba(0,180,255,.2);}
+.tp-title{
+  font-size:.72rem;font-weight:bold;color:#00d4ff;
+  letter-spacing:.2em;text-transform:uppercase;
+  text-shadow:0 0 10px rgba(0,212,255,.5);
+  border-bottom:1px solid rgba(0,180,255,.15);
+  padding-bottom:9px;flex-shrink:0;
+}
+.tp-sec{font-size:.56rem;color:#2a5060;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;margin-top:2px;}
+.city-btn{
+  background:rgba(0,18,32,.7);border:1px solid rgba(0,180,255,.18);
+  color:#4a8090;padding:5px 9px;font-family:'Courier New',monospace;
+  font-size:.6rem;letter-spacing:.05em;cursor:pointer;
+  text-align:left;transition:all .15s;width:100%;display:block;margin-bottom:3px;
+}
+.city-btn:hover{border-color:rgba(0,212,255,.5);color:#00d4ff;background:rgba(0,28,48,.9);}
+.city-btn.active{border-color:#00d4ff;color:#00d4ff;background:rgba(0,45,75,.8);}
+.tp-lbl{font-size:.58rem;color:#3a7080;letter-spacing:.08em;margin-bottom:3px;}
+.tp-inp{
+  width:100%;background:rgba(0,12,24,.8);border:1px solid rgba(0,180,255,.22);
+  color:#00d4ff;padding:5px 8px;font-family:'Courier New',monospace;
+  font-size:.68rem;outline:none;transition:border-color .15s;margin-bottom:6px;
+}
+.tp-inp:focus{border-color:rgba(0,212,255,.6);}
+.tp-row{display:flex;gap:5px;}
+.tp-btn{
+  flex:1;background:rgba(0,28,52,.8);border:1px solid rgba(0,180,255,.28);
+  color:#4a8090;padding:6px 4px;font-family:'Courier New',monospace;
+  font-size:.6rem;letter-spacing:.08em;cursor:pointer;
+  text-transform:uppercase;transition:all .2s;
+}
+.tp-btn:hover{border-color:#00d4ff;color:#00d4ff;background:rgba(0,48,78,.9);}
+.tp-btn.del{border-color:rgba(255,80,60,.2);color:rgba(255,100,80,.45);}
+.tp-btn.del:hover{border-color:#ff5533;color:#ff6644;background:rgba(40,8,4,.8);}
+
+/* Threshold Slider */
+.el-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;}
+.el-val{font-size:.65rem;color:#00d4ff;}
+#el-slider{width:100%;appearance:none;height:2px;background:rgba(0,180,255,.2);
+           outline:none;border-radius:2px;margin-bottom:8px;}
+#el-slider::-webkit-slider-thumb{appearance:none;width:10px;height:10px;
+  border-radius:50%;background:#00d4ff;cursor:pointer;box-shadow:0 0 6px rgba(0,212,255,.8);}
+
+/* Satellite Infos */
+#sat-info{
+  font-size:.61rem;color:#4a8090;line-height:1.9;
+  border-top:1px solid rgba(0,180,255,.1);
+  padding-top:9px;flex:1;min-height:120px;
+}
+.si-lbl{color:#2a5060;}
+.si-val{color:#00d4ff;}
+.si-name{color:#00ffcc;font-size:.67rem;font-weight:bold;}
+.si-warn{color:#ffaa33;}
+.si-ok  {color:#55dd88;}
+.si-div {height:4px;}
+
+/* ── HUD ── */
+#hud{position:fixed;top:20px;left:236px;z-index:10;pointer-events:none;}
+.ht{font-size:1.1rem;font-weight:bold;color:#00d4ff;letter-spacing:.15em;
+    text-transform:uppercase;text-shadow:0 0 15px rgba(0,212,255,.6);margin-bottom:12px;}
+.hs{font-size:.7rem;color:#4a8090;letter-spacing:.08em;margin-bottom:4px;}
+.hs span{color:#00d4ff;}
+
+/* Figure */
+#legend{position:fixed;bottom:20px;left:236px;z-index:10;pointer-events:none;}
+.li{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.65rem;color:#4a8090;letter-spacing:.05em;}
+.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 6px currentColor;}
+
+/* Right Controls */
+#controls{position:fixed;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;gap:8px;}
+.cb{background:rgba(0,20,35,.8);border:1px solid rgba(0,180,255,.25);color:#4a8090;
+    padding:8px 14px;font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.1em;
+    cursor:pointer;text-transform:uppercase;transition:all .2s;pointer-events:all;}
+.cb:hover{border-color:rgba(0,212,255,.6);color:#00d4ff;background:rgba(0,40,60,.9);}
+.cb.on{border-color:#00d4ff;color:#00d4ff;background:rgba(0,60,90,.8);}
+
+#tl{position:fixed;bottom:20px;right:20px;width:280px;z-index:10;pointer-events:all;}
+.tll{font-size:.65rem;color:#4a8090;letter-spacing:.1em;text-transform:uppercase;
+     margin-bottom:6px;display:flex;justify-content:space-between;}
+.tll span{color:#00d4ff;}
+input[type=range]{width:100%;appearance:none;height:2px;background:rgba(0,180,255,.2);
+                  outline:none;border-radius:2px;margin-bottom:8px;}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:12px;height:12px;
+  border-radius:50%;background:#00d4ff;cursor:pointer;box-shadow:0 0 8px rgba(0,212,255,.8);}
+
+/* Scan Line & Script */
+#scan{position:fixed;top:0;left:0;right:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent);
+      animation:sd 6s linear infinite;pointer-events:none;z-index:5;}
+@keyframes sd{from{top:0;opacity:.8}to{top:100vh;opacity:0}}
+.co{position:fixed;width:20px;height:20px;z-index:5;pointer-events:none;opacity:.4;}
+.tl2{top:8px;left:8px;border-top:1px solid #00d4ff;border-left:1px solid #00d4ff}
+.tr{top:8px;right:8px;border-top:1px solid #00d4ff;border-right:1px solid #00d4ff}
+.bl{bottom:8px;left:8px;border-bottom:1px solid #00d4ff;border-left:1px solid #00d4ff}
+.br{bottom:8px;right:8px;border-bottom:1px solid #00d4ff;border-right:1px solid #00d4ff}
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div class="co tl2"></div><div class="co tr"></div>
+<div class="co bl"></div><div class="co br"></div>
+<div id="cc"></div>
+
+<!-- File Loading Overlay Layer -->
+<div id="overlay">
+  <div id="dropzone"
+       onclick="document.getElementById('fileInput').click()"
+       ondragover="dzDrag(event,true)"
+       ondragleave="dzDrag(event,false)"
+       ondrop="dzDrop(event)">
+    <div class="icon">🛰</div>
+    <div id="dztitle">Load TLE Ephemeris File</div>
+    <div class="hint">Click to select file OR Drag into here</div>
+    <div class="hint" style="margin-top:4px;color:#2a6070">starlink_tle.txt · 3LE 格式</div>
+  </div>
+  <div id="progress">Analyzing…</div>
+  <div id="errmsg"></div>
+  <input type="file" id="fileInput" accept=".txt,.tle" onchange="loadFile(this.files[0])">
+</div>
+
+<!-- Left-side Terminal Panel -->
+<div id="tp">
+  <div class="tp-title">▣ Ground Terminal</div>
+
+  <div>
+    <div class="tp-sec">Default Cities</div>
+    <button class="city-btn" data-name="Tokyo"   data-lat="35.6762"  data-lon="139.6503">📍 Tokyo   35.68°N 139.65°E</button>
+    <button class="city-btn" data-name="Shanghai"   data-lat="31.2304"  data-lon="121.4737">📍 Shanghai   31.23°N 121.47°E</button>
+    <button class="city-btn" data-name="Beijing"   data-lat="39.9042"  data-lon="116.4074">📍 Beijing   39.90°N 116.41°E</button>
+    <button class="city-btn" data-name="New York"   data-lat="40.7128"  data-lon="-74.006" >📍 New York   40.71°N  74.01°W</button>
+    <button class="city-btn" data-name="London"   data-lat="51.5074"  data-lon="-0.1278" >📍 London   51.51°N   0.13°W</button>
+    <button class="city-btn" data-name="Sydney"   data-lat="-33.8688" data-lon="151.2093">📍 Sydney   33.87°S 151.21°E</button>
+    <button class="city-btn" data-name="Dubai"   data-lat="25.2048"  data-lon="55.2708" >📍 Dubai   25.20°N  55.27°E</button>
+    <button class="city-btn" data-name="St Paul" data-lat="-23.5505" data-lon="-46.6333">📍 St Paul 23.55°S  46.63°W</button>
+    <button class="city-btn" data-name="Taipei"   data-lat="25.0320"  data-lon="121.5654">📍 Taipei   25.03°N 121.57°E</button>
+    <button class="city-btn" data-name="Los Angeles" data-lat="34.0522"  data-lon="-118.2437">📍 Los Angeles 34.05°N 118.24°W</button>
+  </div>
+
+  <div>
+    <div class="tp-sec">Custom Coordinates</div>
+    <div class="tp-lbl">latitude °N（S minus）</div>
+    <input class="tp-inp" id="inp-lat" type="number" min="-90" max="90" step="0.001" placeholder="35.676">
+    <div class="tp-lbl">longitude °E（W minus）</div>
+    <input class="tp-inp" id="inp-lon" type="number" min="-180" max="180" step="0.001" placeholder="139.650">
+    <div class="tp-row">
+      <button class="tp-btn" onclick="applyCustom()">Confirm</button>
+      <button class="tp-btn del" onclick="clearTerminal()">Clear</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="tp-sec">Elevation Threshold</div>
+    <div class="el-row">
+      <span class="tp-lbl" style="margin:0">Switch to another Satellite When Below this Value</span>
+      <span class="el-val" id="el-disp">25°</span>
+    </div>
+    <input type="range" id="el-slider" min="5" max="60" value="25" oninput="onElSlider(this.value)">
+  </div>
+
+  <div id="sat-info">
+    <span style="color:#2a5060;font-size:.59rem;">— Please Select Terminal Position First —</span>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="ht">■ Starlink Constellation</div>
+  <div class="hs">Total Satellites Number<span id="st">—</span></div>
+  <div class="hs">Epoch Reference <span id="sepoch">—</span></div>
+  <div class="hs">Simulation Offset <span id="stm">+00:00:00</span></div>
+</div>
+
+<!-- Figure -->
+<div id="legend">
+  <div class="li"><div class="ld" style="background:#ff8866;color:#ff8866"></div>incl ≈ 53°</div>
+  <div class="li"><div class="ld" style="background:#55cc88;color:#55cc88"></div>incl ≈ 70°</div>
+  <div class="li"><div class="ld" style="background:#5588ff;color:#5588ff"></div>incl ≈ 97° SSO</div>
+  <div class="li"><div class="ld" style="background:#ffcc44;color:#ffcc44"></div>Other Elevation</div>
+  <div class="li" style="margin-top:6px;">
+    <div style="width:22px;height:2px;background:#00ffcc;box-shadow:0 0 8px #00ffcc;flex-shrink:0;"></div>
+    Laser Route
+  </div>
+</div>
+
+<!-- Right Controls -->
+<div id="controls">
+  <button class="cb on" id="bp" onclick="togglePlay()">⏸ Pause</button>
+  <button class="cb"    id="bo" onclick="toggleOrbits()">Orbit Lines</button>
+  <button class="cb on" id="ba" onclick="toggleAtmos()">Atmosphere</button>
+  <button class="cb"    id="bg" onclick="toggleGrid()">Lat&Lon Grid</button>
+  <button class="cb"        onclick="resetCam()">Reset View</button>
+  <button class="cb"        onclick="reloadTLE()">Reload</button>
+</div>
+
+<div id="tl">
+  <div class="tll">Epoch Offset <span id="stm2">+0 min</span></div>
+  <input type="range" id="tslider" min="0" max="28800" value="0" oninput="onTSlider(this.value)">
+  <div class="tll">Speed <span id="spd">×100</span></div>
+  <input type="range" id="sslider" min="1" max="500" value="100" oninput="onSSlider(this.value)">
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.0.0/satellite.min.js"></script>
+<script>
+// ============================================================
+// 坐标系：统一 ECEF，地球永远不旋转
+//
+// SGP4 输出 ECI (km) → 每帧用 GMST 转 ECEF (km) → 映射 Three.js
+// Three.js 映射（ECEF → Three.js）:
+//   Three.js X = ECEF X  （本初子午线赤道，朝右）
+//   Three.js Y = ECEF Z  （北极，朝上）
+//   Three.js Z = ECEF Y  （东经90°赤道，朝前）
+//
+// 地球贴图：NASA SphereGeometry 默认本初子午线在 +Z
+//   → rotation.y = -PI/2 将其转到 +X，与 ECEF 对齐，之后固定不动
+//
+// 城市/终端/网格：latlon2v3()，固定不动
+// 卫星：每帧 ECI→ECEF→Three.js
+// 仰角：ECEF 中直接计算，不需要 GMST
+// ============================================================
+
+const Re = 6371e3;
+let EL_MIN = 25;
+
+// ECEF (km) → Three.js (m)
+function ecef2v3(p){ return new THREE.Vector3(p.x*1e3, p.z*1e3, p.y*1e3); }
+
+// 经纬度 (rad) + 半径 (m) → Three.js (m)，永远不动
+function latlon2v3(lat_r, lon_r, r_m){
+  return new THREE.Vector3(
+    r_m * Math.cos(lat_r) * Math.sin(lon_r),
+    r_m * Math.sin(lat_r),
+    r_m * Math.cos(lat_r) * Math.cos(lon_r)
+  );
+}
+
+// ── Three.js 初始化 ──────────────────────────────────────
+const container = document.getElementById('cc');
+const renderer  = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000408);
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 1e4, 1e9);
+let sph={th:.4,ph:1.25,r:Re*3.2}, drag=false, pm={x:0,y:0};
+
+function camUpdate(){
+  camera.position.set(
+    sph.r*Math.sin(sph.ph)*Math.sin(sph.th),
+    sph.r*Math.cos(sph.ph),
+    sph.r*Math.sin(sph.ph)*Math.cos(sph.th));
+  camera.lookAt(0,0,0);
+}
+camUpdate();
+
+container.addEventListener('mousedown',e=>{drag=true;pm={x:e.clientX,y:e.clientY};});
+container.addEventListener('mouseup',  ()=>drag=false);
+container.addEventListener('mousemove',e=>{
+  if(!drag)return;
+  sph.th-=(e.clientX-pm.x)*.005;
+  sph.ph=Math.max(.05,Math.min(Math.PI-.05,sph.ph+(e.clientY-pm.y)*.005));
+  pm={x:e.clientX,y:e.clientY}; camUpdate();
+});
+container.addEventListener('wheel',e=>{
+  sph.r=Math.max(Re*1.05,Math.min(Re*20,sph.r*(1+e.deltaY*.001))); camUpdate();
+},{passive:true});
+let td=null;
+container.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){drag=true;pm={x:e.touches[0].clientX,y:e.touches[0].clientY};}
+  if(e.touches.length===2) td=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  e.preventDefault();},{passive:false});
+container.addEventListener('touchend',  ()=>{drag=false;td=null;});
+container.addEventListener('touchmove', e=>{
+  if(e.touches.length===1&&drag){
+    sph.th-=(e.touches[0].clientX-pm.x)*.005;
+    sph.ph=Math.max(.05,Math.min(Math.PI-.05,sph.ph+(e.touches[0].clientY-pm.y)*.005));
+    pm={x:e.touches[0].clientX,y:e.touches[0].clientY};camUpdate();
+  }
+  if(e.touches.length===2&&td){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    sph.r=Math.max(Re*1.05,Math.min(Re*20,sph.r*td/d));td=d;camUpdate();
+  }
+  e.preventDefault();},{passive:false});
+
+// ── 星空 ─────────────────────────────────────────────────
+const _sg=new THREE.BufferGeometry(), _sv=[];
+for(let i=0;i<8000;i++){const r=Re*50;_sv.push((Math.random()-.5)*r*2,(Math.random()-.5)*r*2,(Math.random()-.5)*r*2);}
+_sg.setAttribute('position',new THREE.Float32BufferAttribute(_sv,3));
+scene.add(new THREE.Points(_sg,new THREE.PointsMaterial({color:0xffffff,size:Re*.007,sizeAttenuation:true})));
+
+// ── 灯光 ─────────────────────────────────────────────────
+const sunLight=new THREE.DirectionalLight(0xfff8f0,.55);
+sunLight.position.set(1,0,0).normalize(); scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x223355,.18));
+const fillLight=new THREE.DirectionalLight(0x1a3060,.03);
+fillLight.position.set(-1,0,0).normalize(); scene.add(fillLight);
+
+// ── 地球（ECEF 固定，永远不旋转）────────────────────────
+// NASA 贴图：SphereGeometry 默认本初子午线在 +Z
+// rotation.y = -PI/2 将本初子午线转到 +X（ECEF X 轴），之后固定
+const earthMat=new THREE.MeshPhongMaterial({shininess:8,specular:new THREE.Color(0x112233)});
+const earthMesh=new THREE.Mesh(new THREE.SphereGeometry(Re,72,36),earthMat);
+earthMesh.rotation.y=-Math.PI/2;
+scene.add(earthMesh);
+
+const TL=new THREE.TextureLoader();
+TL.load('https://unpkg.com/three-globe/example/img/earth-day.jpg',   t=>{earthMat.map=t;earthMat.needsUpdate=true;});
+TL.load('https://unpkg.com/three-globe/example/img/earth-normal.png',t=>{earthMat.normalMap=t;earthMat.normalScale=new THREE.Vector2(.04,.04);earthMat.needsUpdate=true;});
+TL.load('https://unpkg.com/three-globe/example/img/earth-water.png', t=>{earthMat.specularMap=t;earthMat.needsUpdate=true;});
+
+TL.load('https://unpkg.com/three-globe/example/img/earth-night.jpg', t=>{
+  const m=new THREE.MeshBasicMaterial({map:t,transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false});
+  const nm=new THREE.Mesh(new THREE.SphereGeometry(Re*1.001,72,36),m);
+  nm.rotation.y=-Math.PI/2; scene.add(nm);
+});
+TL.load('https://unpkg.com/three-globe/example/img/earth-clouds.png',t=>{
+  const m=new THREE.MeshPhongMaterial({map:t,transparent:true,opacity:.35,depthWrite:false});
+  const cm=new THREE.Mesh(new THREE.SphereGeometry(Re*1.005,64,32),m);
+  cm.rotation.y=-Math.PI/2; scene.add(cm);
+});
+
+// ── 大气层（球对称，不需要旋转）─────────────────────────
+let atmosMesh=null;
+(function(){
+  const m=new THREE.MeshPhongMaterial({color:0x1a6fff,transparent:true,opacity:.055,side:THREE.FrontSide,depthWrite:false});
+  atmosMesh=new THREE.Mesh(new THREE.SphereGeometry(Re*1.02,32,16),m); scene.add(atmosMesh);
+  const m2=new THREE.MeshPhongMaterial({color:0x3388ff,transparent:true,opacity:.022,side:THREE.BackSide,depthWrite:false});
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(Re*1.07,32,16),m2));
+})();
+
+// ── 经纬网格（ECEF 固定，latlon2v3 直接算，不旋转）─────
+const gridGrp=new THREE.Group(); scene.add(gridGrp);
+(function(){
+  const m=new THREE.LineBasicMaterial({color:0x113344,transparent:true,opacity:.3});
+  for(let lon=0;lon<360;lon+=30){
+    const pts=[];
+    for(let lat=-90;lat<=90;lat+=2){
+      pts.push(latlon2v3(lat*Math.PI/180, lon*Math.PI/180, Re*1.001));
+    }
+    gridGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m));
+  }
+  for(let lat=-75;lat<=75;lat+=15){
+    const pts=[];
+    for(let lon=0;lon<=360;lon+=3){
+      pts.push(latlon2v3(lat*Math.PI/180, lon*Math.PI/180, Re*1.001));
+    }
+    gridGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m));
+  }
+})();
+gridGrp.visible=false;
+
+// ── 轨道线（ECI，不随地球转）─────────────────────────────
+const orbitGrp=new THREE.Group(); scene.add(orbitGrp);
+orbitGrp.visible=false;
+
+// ── 卫星点云 ─────────────────────────────────────────────
+const _sc=document.createElement('canvas'); _sc.width=_sc.height=32;
+const _sx=_sc.getContext('2d');
+const _gr=_sx.createRadialGradient(16,16,0,16,16,14);
+_gr.addColorStop(0,'rgba(255,255,255,1)');
+_gr.addColorStop(.5,'rgba(255,255,255,.85)');
+_gr.addColorStop(1,'rgba(255,255,255,0)');
+_sx.beginPath();_sx.arc(16,16,14,0,Math.PI*2);_sx.fillStyle=_gr;_sx.fill();
+const spriteTex=new THREE.CanvasTexture(_sc);
+
+const satMat=new THREE.PointsMaterial({
+  size:Re*.022,sizeAttenuation:true,vertexColors:true,
+  transparent:true,opacity:1,map:spriteTex,alphaTest:.02,
+  depthWrite:false,blending:THREE.AdditiveBlending
+});
+
+let satPoints=null, satGeo=null;
+let allSats=[], epochDate=null;
+let satECEF=[];  // ECEF km 坐标（每帧 ECI→ECEF 转换），用于仰角计算
+
+function inclColor(deg){
+  const a=Math.abs(deg);
+  if(a<60) return new THREE.Color(0xff8866);
+  if(a<80) return new THREE.Color(0x55cc88);
+  if(a>85) return new THREE.Color(0x5588ff);
+  return       new THREE.Color(0xffcc44);
+}
+
+// ── 地面终端系统 ─────────────────────────────────────────
+let terminal=null;       // {name, lat, lon, v3}  v3=固定 ECEF Three.js 位置
+let connectedIdx=-1;
+
+const termGrp  = new THREE.Group(); scene.add(termGrp);
+const laserGrp = new THREE.Group(); scene.add(laserGrp);
+
+let switchFlash=0;
+
+// 激光束（核心线 + 4 条平行外晕 + 末端光晕）
+function buildLaser(p1, p2, flash){
+  laserGrp.clear();
+  const col  = flash ? 0xffffff : 0x00ffcc;
+  const cMat = new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.98,depthWrite:false,blending:THREE.AdditiveBlending});
+  laserGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1.clone(),p2.clone()]),cMat));
+
+  const dir=p2.clone().sub(p1).normalize();
+  const up=Math.abs(dir.y)<.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0);
+  const px=new THREE.Vector3().crossVectors(dir,up).normalize().multiplyScalar(Re*.009);
+  const py=new THREE.Vector3().crossVectors(dir,px).normalize().multiplyScalar(Re*.009);
+  const gMat=new THREE.LineBasicMaterial({color:0x00aaff,transparent:true,opacity:.2,depthWrite:false,blending:THREE.AdditiveBlending});
+  [[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>{
+    const off=px.clone().multiplyScalar(a).addScaledVector(py,b);
+    laserGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1.clone().add(off),p2.clone().add(off)]),gMat));
+  });
+
+  // 末端光晕（卫星端）
+  const haloCvs=document.createElement('canvas'); haloCvs.width=haloCvs.height=64;
+  const hx=haloCvs.getContext('2d');
+  const hg=hx.createRadialGradient(32,32,0,32,32,28);
+  hg.addColorStop(0,'rgba(0,255,200,0.9)'); hg.addColorStop(.4,'rgba(0,200,255,0.4)'); hg.addColorStop(1,'rgba(0,100,255,0)');
+  hx.beginPath();hx.arc(32,32,28,0,Math.PI*2);hx.fillStyle=hg;hx.fill();
+  const haloTex=new THREE.CanvasTexture(haloCvs);
+  const haloMat=new THREE.SpriteMaterial({map:haloTex,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});
+  const haloSprite=new THREE.Sprite(haloMat);
+  haloSprite.position.copy(p2);
+  haloSprite.scale.setScalar(Re*.12);
+  laserGrp.add(haloSprite);
+}
+
+// 终端标记（ECEF 固定位置，只建一次）
+function buildTermMark(v3){
+  termGrp.clear();
+  const mat1=new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false});
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(Re*.013,12,8),mat1);
+  dot.position.copy(v3); termGrp.add(dot);
+
+  const mat2=new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:.55,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
+  const ring1=new THREE.Mesh(new THREE.RingGeometry(Re*.02,Re*.028,32),mat2);
+  ring1.position.copy(v3); ring1.lookAt(0,0,0); ring1.rotateX(Math.PI/2); termGrp.add(ring1);
+
+  const mat3=new THREE.MeshBasicMaterial({color:0x00aaff,transparent:true,opacity:.28,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
+  const ring2=new THREE.Mesh(new THREE.RingGeometry(Re*.036,Re*.04,32),mat3);
+  ring2.position.copy(v3); ring2.lookAt(0,0,0); ring2.rotateX(Math.PI/2); termGrp.add(ring2);
+}
+
+// 仰角计算（纯 ECEF，不需要 GMST）
+// termV3: Three.js (m) ECEF   satECEF: {x,y,z} km ECEF
+function calcElev(termV3, satECEF){
+  const satV3 = ecef2v3(satECEF);
+  const toSat = satV3.clone().sub(termV3).normalize();
+  const up    = termV3.clone().normalize();   // 地表法向即 ECEF 位置单位向量
+  return Math.asin(Math.max(-1,Math.min(1,toSat.dot(up)))) * 180/Math.PI;
+}
+
+// 选最高仰角卫星
+function findBestSat(termV3){
+  let bi=-1, be=-999;
+  for(let i=0;i<allSats.length;i++){
+    if(!satECEF[i])continue;
+    const el=calcElev(termV3, satECEF[i]);
+    if(el>be){be=el;bi=i;}
+  }
+  return {idx:bi, el:be};
+}
+
+// 每帧更新链路（不再需要 gmst）
+function updateLink(simT){
+  if(!terminal||!allSats.length)return;
+  const termV3=terminal.v3;
+
+  // 检查当前卫星仰角
+  let curEl=null;
+  if(connectedIdx>=0 && satECEF[connectedIdx]){
+    curEl=calcElev(termV3, satECEF[connectedIdx]);
+    if(curEl < EL_MIN){ connectedIdx=-1; curEl=null; switchFlash=8; }
+  }
+  if(connectedIdx<0){
+    const {idx,el}=findBestSat(termV3);
+    if(idx>=0 && el>0){ connectedIdx=idx; curEl=el; switchFlash=8; }
+  }
+
+  // 激光
+  if(connectedIdx>=0 && satECEF[connectedIdx]){
+    const satV3=ecef2v3(satECEF[connectedIdx]);
+    buildLaser(termV3, satV3, switchFlash>0);
+    if(switchFlash>0) switchFlash--;
+  } else {
+    laserGrp.clear();
+  }
+
+  // 信息面板
+  updateInfoPanel(termV3, simT, curEl);
+}
+
+function updateInfoPanel(termV3, simT, curEl){
+  const info=document.getElementById('sat-info');
+  if(connectedIdx<0||!satECEF[connectedIdx]){
+    info.innerHTML='<span class="si-warn">⚠ 当前无可用卫星</span>'; return;
+  }
+  const sat=allSats[connectedIdx];
+  const satV3=ecef2v3(satECEF[connectedIdx]);
+  const slant_km=(termV3.distanceTo(satV3)/1e3).toFixed(0);
+  const elStr=curEl!=null?curEl.toFixed(1)+'°':'—';
+  const warnClass=curEl!=null&&curEl<EL_MIN+5?'si-warn':'si-ok';
+
+  // 卫星地理坐标（ECEF 直接反算，无需 GMST）
+  let geoHtml='';
+  try{
+    const ecf=satECEF[connectedIdx];
+    const r_km=Math.sqrt(ecf.x**2+ecf.y**2+ecf.z**2);
+    const slat_r=Math.asin(ecf.z/r_km);
+    const slon_r=Math.atan2(ecf.y,ecf.x);
+    const salt_km=r_km-6371;
+    geoHtml=`
+      <div><span class="si-lbl">星下纬度 </span><span class="si-val">${(slat_r*180/Math.PI).toFixed(1)}°</span></div>
+      <div><span class="si-lbl">星下经度 </span><span class="si-val">${(slon_r*180/Math.PI).toFixed(1)}°</span></div>
+      <div><span class="si-lbl">轨道高度 </span><span class="si-val">${salt_km.toFixed(0)} km</span></div>`;
+  }catch(e){}
+
+  info.innerHTML=`
+    <div class="si-name">▶ ${sat.name}</div>
+    <div class="si-div"></div>
+    <div><span class="si-lbl">终端纬度 </span><span class="si-val">${terminal.lat.toFixed(3)}°</span></div>
+    <div><span class="si-lbl">终端经度 </span><span class="si-val">${terminal.lon.toFixed(3)}°</span></div>
+    <div class="si-div"></div>
+    <div><span class="si-lbl">仰角     </span><span class="${warnClass}">${elStr}</span></div>
+    <div><span class="si-lbl">斜距     </span><span class="si-val">${slant_km} km</span></div>
+    ${geoHtml}
+    <div style="margin-top:7px;color:#1a4050;font-size:.56rem;">↑ 最大仰角优先 · 低于 ${EL_MIN}° 触发切换</div>`;
+}
+
+// ── TLE 解析 ─────────────────────────────────────────────
+function parseTLE(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trimEnd()).filter(l=>l.length>0);
+  const sats=[]; let i=0;
+  while(i<lines.length){
+    if(!lines[i].startsWith('1 ')&&!lines[i].startsWith('2 ')){
+      const name=lines[i].trim();
+      const l1=lines[i+1]||'', l2=lines[i+2]||'';
+      if(l1.startsWith('1 ')&&l2.startsWith('2 ')){
+        try{
+          const satrec=satellite.twoline2satrec(l1,l2);
+          sats.push({satrec, col:inclColor(parseFloat(l2.substring(8,16))), name});
+          i+=3; continue;
+        }catch(e){}
+      }
+    }
+    i++;
+  }
+  return sats;
+}
+
+// ── 构建场景 ─────────────────────────────────────────────
+function buildSatScene(sats){
+  if(satPoints){scene.remove(satPoints);satPoints=null;}
+  orbitGrp.clear();
+  allSats=sats;
+  satECEF=new Array(sats.length).fill(null);
+
+  // 历元
+  const s0=sats[0].satrec;
+  const yr=s0.epochyr<57?2000+s0.epochyr:1900+s0.epochyr;
+  epochDate=new Date(Date.UTC(yr,0,1)+((s0.epochdays-1)*86400*1000));
+  document.getElementById('sepoch').textContent=
+    epochDate.toISOString().replace('T',' ').substring(0,16)+' UTC';
+  document.getElementById('st').textContent=sats.length;
+
+  // BufferGeometry
+  const posArr=new Float32Array(sats.length*3);
+  const colArr=new Float32Array(sats.length*3);
+  sats.forEach((s,i)=>{colArr[i*3]=s.col.r;colArr[i*3+1]=s.col.g;colArr[i*3+2]=s.col.b;});
+  satGeo=new THREE.BufferGeometry();
+  satGeo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  satGeo.setAttribute('color',   new THREE.BufferAttribute(colArr,3));
+  satPoints=new THREE.Points(satGeo,satMat);
+  scene.add(satPoints);
+
+  // 轨道线（ECEF，最多 300 条）
+  const step=Math.max(1,Math.floor(sats.length/300));
+  for(let i=0;i<sats.length;i+=step){
+    const sr=sats[i].satrec;
+    const T_min=2*Math.PI/sr.no;
+    const t0=epochDate;
+    const pts=[];
+    for(let k=0;k<=60;k++){
+      const tt=new Date(t0.getTime()+k/60*T_min*60*1000);
+      const r=satellite.propagate(sr,tt);
+      if(r&&r.position){
+        const gmst_o=satellite.gstime(tt);
+        const ecf=satellite.eciToEcf(r.position,gmst_o);
+        pts.push(ecef2v3(ecf));
+      }
+    }
+    if(pts.length>2){
+      const m=new THREE.LineBasicMaterial({color:sats[i].col,transparent:true,opacity:.12});
+      orbitGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m));
+    }
+  }
+  updateSats(0);
+}
+
+// ── 更新卫星位置（ECI→ECEF→Three.js）───────────────────
+function updateSats(simT){
+  if(!satGeo||!epochDate)return;
+  const t=new Date(epochDate.getTime()+simT*1000);
+  const gmst=satellite.gstime(t);
+  const pos=satGeo.attributes.position.array;
+  allSats.forEach((s,i)=>{
+    const r=satellite.propagate(s.satrec,t);
+    if(r&&r.position){
+      const ecf=satellite.eciToEcf(r.position,gmst);
+      satECEF[i]=ecf;                 // ECEF km，留给仰角计算
+      const v=ecef2v3(ecf);           // ECEF→Three.js m
+      pos[i*3]=v.x; pos[i*3+1]=v.y; pos[i*3+2]=v.z;
+    } else {
+      satECEF[i]=null;
+    }
+  });
+  satGeo.attributes.position.needsUpdate=true;
+}
+
+// ── 仿真状态 ─────────────────────────────────────────────
+let simT=0, playing=true, speed=100, lastT=null;
+
+// ── 动画循环 ─────────────────────────────────────────────
+function animate(rt){
+  requestAnimationFrame(animate);
+  if(playing&&lastT!==null) simT=(simT+(rt-lastT)*.001*speed)%28800;
+  lastT=rt;
+
+  if(allSats.length){
+    updateSats(simT);
+    if(terminal) updateLink(simT);
+    else laserGrp.clear();
+  }
+
+  // 地球不旋转（所有坐标统一 ECEF，ECI→ECEF 在 updateSats 中完成）
+
+  // 太阳光旋转（周期 5700 s，赤道直射）
+  const ang=(simT/5700)*Math.PI*2;
+  sunLight.position.set(Math.cos(ang),0,Math.sin(ang)).normalize();
+  fillLight.position.set(-Math.cos(ang),0,-Math.sin(ang)).normalize();
+
+  const h=Math.floor(simT/3600),m=Math.floor((simT%3600)/60),s2=Math.floor(simT%60);
+  document.getElementById('stm').textContent=
+    `+${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s2).padStart(2,'0')}`;
+  document.getElementById('stm2').textContent=`+${Math.floor(simT/60)} min`;
+  document.getElementById('tslider').value=simT;
+
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+
+// ── 终端控制 ─────────────────────────────────────────────
+function setTerminal(name,lat,lon){
+  const lat_r=lat*Math.PI/180, lon_r=lon*Math.PI/180;
+  const v3=latlon2v3(lat_r, lon_r, Re*1.003);
+  terminal={name,lat,lon,v3};
+  connectedIdx=-1;
+  document.getElementById('inp-lat').value=lat;
+  document.getElementById('inp-lon').value=lon;
+  buildTermMark(v3);
+  document.getElementById('sat-info').innerHTML=
+    '<span style="color:#2a5060;font-size:.59rem;">计算中…</span>';
+}
+function clearTerminal(){
+  terminal=null; connectedIdx=-1;
+  laserGrp.clear(); termGrp.clear();
+  document.querySelectorAll('.city-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sat-info').innerHTML=
+    '<span style="color:#2a5060;font-size:.59rem;">— 请先选择终端位置 —</span>';
+}
+function applyCustom(){
+  const lat=parseFloat(document.getElementById('inp-lat').value);
+  const lon=parseFloat(document.getElementById('inp-lon').value);
+  if(isNaN(lat)||isNaN(lon)||lat<-90||lat>90||lon<-180||lon>180){
+    alert('请输入有效经纬度（纬度 ±90，经度 ±180）'); return;
+  }
+  document.querySelectorAll('.city-btn').forEach(b=>b.classList.remove('active'));
+  setTerminal('自定义',lat,lon);
+}
+
+document.querySelectorAll('.city-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.city-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    setTerminal(btn.dataset.name, parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lon));
+  });
+});
+
+function onElSlider(v){
+  EL_MIN=parseFloat(v);
+  document.getElementById('el-disp').textContent=v+'°';
+  connectedIdx=-1;  // 门限改变时重新选星
+}
+
+// ── TLE 文件加载 ─────────────────────────────────────────
+function loadFile(file){
+  if(!file)return;
+  const prog=document.getElementById('progress');
+  const err =document.getElementById('errmsg');
+  prog.style.display='block'; prog.textContent='读取文件…'; err.style.display='none';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    prog.textContent='解析 TLE…';
+    setTimeout(()=>{
+      try{
+        const sats=parseTLE(e.target.result);
+        if(!sats.length) throw new Error('未找到有效 TLE 记录，请检查文件格式');
+        prog.textContent=`构建场景（${sats.length} 颗卫星）…`;
+        setTimeout(()=>{
+          buildSatScene(sats);
+          document.getElementById('overlay').style.display='none';
+        },30);
+      }catch(ex){
+        prog.style.display='none'; err.style.display='block';
+        err.textContent='解析失败：'+ex.message;
+      }
+    },30);
+  };
+  reader.readAsText(file,'utf-8');
+}
+function dzDrag(e,on){e.preventDefault();document.getElementById('dropzone').classList.toggle('drag',on);}
+function dzDrop(e){
+  e.preventDefault(); document.getElementById('dropzone').classList.remove('drag');
+  const f=e.dataTransfer.files[0]; if(f)loadFile(f);
+}
+function reloadTLE(){
+  terminal=null; connectedIdx=-1;
+  laserGrp.clear(); termGrp.clear();
+  document.getElementById('overlay').style.display='flex';
+}
+
+// ── 其他控件 ─────────────────────────────────────────────
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('bp').textContent=playing?'⏸ 暂停':'▶ 播放';
+  document.getElementById('bp').classList.toggle('on',playing);
+  if(playing)lastT=null;
+}
+function toggleOrbits(){orbitGrp.visible=!orbitGrp.visible;document.getElementById('bo').classList.toggle('on',orbitGrp.visible);}
+function toggleAtmos(){if(atmosMesh){atmosMesh.visible=!atmosMesh.visible;document.getElementById('ba').classList.toggle('on',atmosMesh.visible);}}
+function toggleGrid(){gridGrp.visible=!gridGrp.visible;document.getElementById('bg').classList.toggle('on',gridGrp.visible);}
+function resetCam(){sph={th:.4,ph:1.25,r:Re*3.2};camUpdate();}
+function onTSlider(v){simT=parseFloat(v);}
+function onSSlider(v){speed=parseFloat(v);document.getElementById('spd').textContent=`×${v}`;}
+
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
