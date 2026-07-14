@@ -9,10 +9,10 @@ This repository presents a Starlink satellite constellation visualization develo
 
 
 # Usage Guide
-1. Download 'Open_in_browser.html' and open it in your web broswer.  
-2. Download 'Starlink_tle.txt'.  
-3. Drag 'Starlink_tle.txt' into the web page.  
+1. Download **Open_in_browser.html** and open it in your web broswer.  
+2. Download **Starlink_tle.txt**.  
+3. Drag **Starlink_tle.txt** into the web page.  
 4. The visualization will load automatically.  
 
 
-For a quick demostration, watch 'Starlink Constellation.mp4' included in this repository.
+For a quick demostration, watch **Starlink Constellation.mp4** included in this repository.
